@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  monitor:
+    build: .
+    container_name: monitor-service
+    ports:
+      - "5001:5001"
+    env_file:
+      - .env
+    environment:
+      - MONITOR_PORT=5001
+    restart: unless-stopped
+    networks:
+      - monitor-network
+    depends_on:
+      - mysql-logs
+
+  mysql-logs:
+    image: mysql:8.0
+    container_name: mysql-logs
+    environment:
+      MYSQL_ROOT_PASSWORD: ${LOG_DB_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: LOGSEGURIDAD
+      MYSQL_USER: ${LOG_DB_USER:-log_user}
+      MYSQL_PASSWORD: ${LOG_DB_PASSWORD:-logpassword}
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql-logs-data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    networks:
+      - monitor-network
+    restart: unless-stopped
+
+networks:
+  monitor-network:
+    driver: bridge
+
+volumes:
+  mysql-logs-data:
+

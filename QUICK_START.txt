@@ -1,0 +1,66 @@
+═══════════════════════════════════════════════════════════════
+  MICROSERVICIO DE MONITOREO - INICIO RÁPIDO
+═══════════════════════════════════════════════════════════════
+
+PASOS ESENCIALES PARA DESPLEGAR:
+
+1. CONFIGURAR VARIABLES DE ENTORNO
+   ─────────────────────────────────
+   cp env.example .env
+   nano .env
+   
+   ⚠️ CAMBIAR ESTAS IPs:
+   - GESTOR_DB_HOST=172.31.XX.XX (IP privada del gestor)
+   - LOG_DB_HOST=172.31.XX.XX (IP de la BD de logs)
+   - GESTOR_API_URL=http://172.31.XX.XX:5000
+
+2. INSTALAR DEPENDENCIAS
+   ──────────────────────
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+
+3. CONFIGURAR BASE DE DATOS
+   ─────────────────────────
+   mysql -u root -p < database/schema.sql
+
+4. PROBAR CONEXIONES
+   ──────────────────
+   python test_connection.py
+
+5. INICIAR SERVICIO
+   ────────────────
+   Opción A (Prueba):
+     ./start.sh
+   
+   Opción B (Producción):
+     ./deploy.sh
+     sudo systemctl start monitor-service
+
+═══════════════════════════════════════════════════════════════
+  VERIFICACIÓN
+═══════════════════════════════════════════════════════════════
+
+✓ Servicio corriendo:
+  sudo systemctl status monitor-service
+
+✓ Ver logs:
+  sudo journalctl -u monitor-service -f
+
+✓ Probar API:
+  curl http://localhost:5001/health
+
+✓ Ver logs en BD:
+  mysql -u log_user -p LOGSEGURIDAD
+  SELECT * FROM operaciones_log ORDER BY fecha_hora DESC LIMIT 10;
+
+═══════════════════════════════════════════════════════════════
+  DOCUMENTACIÓN COMPLETA
+═══════════════════════════════════════════════════════════════
+
+- README.md - Documentación completa
+- CONFIGURACION_IPs.md - Guía de IPs y Security Groups
+- INSTRUCCIONES_DESPLIEGUE.md - Pasos detallados
+
+═══════════════════════════════════════════════════════════════
+
