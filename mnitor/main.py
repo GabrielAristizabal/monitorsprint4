@@ -14,6 +14,8 @@ import requests
 from flask import Flask, request, jsonify
 from threading import Thread
 import schedule
+from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure, OperationFailure
 from config import Config
 
 # Configuración de logging
@@ -29,15 +31,11 @@ class DatabaseMonitor:
     """Clase para monitorear la base de datos del gestor de pedidos"""
     
     def __init__(self, config: Dict):
-        self.gestor_db_config = {
-            'host': config.get('GESTOR_DB_HOST', 'localhost'),
-            'port': int(config.get('GESTOR_DB_PORT', 3306)),
-            'user': config.get('GESTOR_DB_USER', 'root'),
-            'password': config.get('GESTOR_DB_PASSWORD', ''),
-            'database': config.get('GESTOR_DB_NAME', 'pedidos'),
-            'charset': 'utf8mb4'
-        }
+        # Configuración MongoDB para el gestor (para monitoreo)
+        self.gestor_mongo_uri = config.get('GESTOR_MONGO_URI', 'mongodb://localhost:27017')
+        self.gestor_mongo_db = config.get('GESTOR_MONGO_DB', 'provesi_wms')
         
+        # Configuración MySQL para logs (LOGSEGURIDAD)
         self.log_db_config = {
             'host': config.get('LOG_DB_HOST', 'localhost'),
             'port': int(config.get('LOG_DB_PORT', 3306)),
@@ -50,20 +48,39 @@ class DatabaseMonitor:
         self.gestor_api_url = config.get('GESTOR_API_URL', 'http://localhost:5000')
         self.monitor_interval = int(config.get('MONITOR_INTERVAL', 30))  # segundos
         
-    def get_connection(self, db_type: str = 'log'):
-        """Obtiene conexión a la base de datos"""
-        config = self.log_db_config if db_type == 'log' else self.gestor_db_config
+        # Cliente MongoDB para monitorear el gestor
+        self.gestor_client = None
+        self._init_gestor_client()
+    
+    def _init_gestor_client(self):
+        """Inicializa el cliente de MongoDB para monitorear el gestor"""
         try:
-            return pymysql.connect(**config)
+            self.gestor_client = MongoClient(self.gestor_mongo_uri)
+            # Verificar conexión
+            self.gestor_client.admin.command('ping')
+            logger.info("Conexión a MongoDB del gestor establecida correctamente")
+        except ConnectionFailure as e:
+            logger.error(f"Error conectando a MongoDB del gestor: {e}")
+    
+    def get_gestor_db(self):
+        """Obtiene la base de datos del gestor (MongoDB)"""
+        if self.gestor_client is None:
+            self._init_gestor_client()
+        return self.gestor_client[self.gestor_mongo_db]
+    
+    def get_log_connection(self):
+        """Obtiene conexión a la base de datos de logs (MySQL)"""
+        try:
+            return pymysql.connect(**self.log_db_config)
         except Exception as e:
-            logger.error(f"Error conectando a {db_type} DB: {e}")
+            logger.error(f"Error conectando a la BD de logs (MySQL): {e}")
             return None
     
     def log_operation(self, operation_type: str, details: Dict, is_suspicious: bool = False):
-        """Registra una operación en la base de datos de logs"""
-        conn = self.get_connection('log')
+        """Registra una operación en la base de datos de logs (MySQL - LOGSEGURIDAD)"""
+        conn = self.get_log_connection()
         if not conn:
-            logger.error("No se pudo conectar a la base de datos de logs")
+            logger.error("No se pudo conectar a la base de datos de logs (MySQL)")
             return False
         
         try:
@@ -92,102 +109,109 @@ class DatabaseMonitor:
             conn.close()
     
     def check_database_operations(self):
-        """Monitorea las operaciones en la base de datos del gestor"""
-        conn = self.get_connection('gestor')
-        if not conn:
-            logger.warning("No se pudo conectar a la base de datos del gestor")
-            return
-        
+        """Monitorea las operaciones en la base de datos del gestor (MongoDB)"""
         try:
-            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-                # Verificar operaciones recientes en tablas de pedidos
-                # Asumiendo que hay una tabla de pedidos con timestamp
-                cursor.execute("""
-                    SELECT COUNT(*) as total_operaciones
-                    FROM information_schema.tables 
-                    WHERE table_schema = %s
-                """, (self.gestor_db_config['database'],))
-                
-                # Monitorear queries recientes (si está habilitado el log de queries)
-                # Esto requiere que MySQL tenga habilitado el general_log
-                cursor.execute("SHOW PROCESSLIST")
-                processes = cursor.fetchall()
-                
-                for process in processes:
-                    if process['User'] == self.gestor_db_config['user']:
-                        query = process.get('Info', '')
-                        if query and self.is_suspicious_query(query):
-                            self.log_operation(
-                                'QUERY_SOSPECHOSA',
-                                {
-                                    'query': query,
-                                    'process_id': process['Id'],
-                                    'tiempo_ejecucion': process.get('Time', 0),
-                                    'estado': process.get('State', '')
-                                },
-                                is_suspicious=True
-                            )
+            db = self.get_gestor_db()
+            
+            # Monitorear colecciones y operaciones recientes
+            collections = db.list_collection_names()
+            
+            # Verificar operaciones recientes en la colección de pedidos
+            orders_collection = db['orders']
+            recent_orders_count = orders_collection.count_documents({
+                'created_at': {
+                    '$gte': datetime.utcnow().replace(second=0, microsecond=0)
+                }
+            })
+            
+            if recent_orders_count > 0:
+                self.log_operation(
+                    'ORDERS_CREATED',
+                    {
+                        'count': recent_orders_count,
+                        'collection': 'orders'
+                    },
+                    is_suspicious=False
+                )
+            
+            # Monitorear operaciones de administración sospechosas
+            # En MongoDB, las operaciones administrativas se pueden detectar mediante:
+            # - Cambios en colecciones del sistema
+            # - Operaciones en bases de datos del sistema
+            # - Cambios en usuarios y roles
+            
+            # Verificar si hay operaciones en colecciones del sistema
+            system_collections = [col for col in collections if col.startswith('system.')]
+            if system_collections:
+                self.log_operation(
+                    'SYSTEM_COLLECTION_ACCESS',
+                    {
+                        'collections': system_collections,
+                        'warning': 'Acceso a colecciones del sistema detectado'
+                    },
+                    is_suspicious=True
+                )
+            
         except Exception as e:
             logger.error(f"Error monitoreando operaciones de BD: {e}")
-        finally:
-            conn.close()
+            self.log_operation(
+                'MONITORING_ERROR',
+                {
+                    'error': str(e),
+                    'type': 'database_operations'
+                },
+                is_suspicious=False
+            )
     
-    def is_suspicious_query(self, query: str) -> bool:
-        """Detecta si una query es sospechosa (escalamiento de privilegios)"""
-        if not query:
-            return False
+    def is_suspicious_operation(self, operation: Dict) -> bool:
+        """
+        Detecta si una operación de MongoDB es sospechosa (escalamiento de privilegios)
+        """
+        operation_type = operation.get('operation', '').upper()
+        collection = operation.get('collection', '')
+        command = operation.get('command', {})
         
-        query_upper = query.upper().strip()
-        
-        # Operaciones permitidas (solo crear/registrar pedidos y reportes)
-        allowed_patterns = [
-            'SELECT',  # Para reportes
-            'INSERT INTO',  # Para crear pedidos
-            'UPDATE',  # Para actualizar pedidos (si es necesario)
-            'FROM pedidos',
-            'FROM productos',
-            'FROM clientes',
-            'FROM reportes'
+        # Operaciones sospechosas en MongoDB
+        suspicious_operations = [
+            'DROP',  # Eliminar colecciones
+            'DROPCOLLECTION',
+            'DROPDATABASE',
+            'CREATECOLLECTION',  # Crear colecciones nuevas (puede ser sospechoso)
+            'CREATEUSER',
+            'DROPUSER',
+            'GRANTROLES',
+            'REVOKEROLES',
+            'UPDATEUSER',
+            'SHUTDOWN',
+            'FSYNC',
+            'REPLSETGETSTATUS',
+            'REPLSETINITIATE'
         ]
         
-        # Operaciones sospechosas (escalamiento de privilegios)
-        suspicious_patterns = [
-            'DROP',
-            'DELETE FROM',  # Si no está permitido
-            'TRUNCATE',
-            'ALTER TABLE',
-            'CREATE TABLE',
-            'CREATE DATABASE',
-            'GRANT',
-            'REVOKE',
-            'FLUSH PRIVILEGES',
-            'SET PASSWORD',
-            'CREATE USER',
-            'DROP USER',
-            'RENAME USER',
-            'SHOW GRANTS',
-            'INFORMATION_SCHEMA',  # Acceso a metadatos del sistema
-            'mysql.',  # Acceso a tablas del sistema
-            'performance_schema',
-            'sys.'
-        ]
-        
-        # Verificar si contiene patrones sospechosos
-        for pattern in suspicious_patterns:
-            if pattern in query_upper:
+        # Verificar operaciones sospechosas
+        for suspicious_op in suspicious_operations:
+            if suspicious_op in operation_type:
                 return True
         
-        # Verificar que las operaciones permitidas sean solo en tablas permitidas
-        if 'INSERT' in query_upper or 'UPDATE' in query_upper:
-            if not any(allowed in query_upper for allowed in ['pedidos', 'productos', 'clientes']):
-                return True
+        # Verificar acceso a colecciones del sistema
+        if collection.startswith('system.') or collection.startswith('admin.'):
+            return True
+        
+        # Verificar comandos administrativos
+        if isinstance(command, dict):
+            cmd_keys = [k.upper() for k in command.keys()]
+            admin_commands = ['CREATEUSER', 'DROPUSER', 'GRANTROLES', 'REVOKEROLES', 
+                            'SHUTDOWN', 'FSYNC', 'REPLSET']
+            for admin_cmd in admin_commands:
+                if any(admin_cmd in key for key in cmd_keys):
+                    return True
         
         return False
     
     def monitor_api_calls(self):
-        """Monitorea las llamadas a la API del gestor (si está disponible)"""
+        """Monitorea las llamadas a la API del gestor y detecta operaciones sospechosas"""
         try:
-            # Intentar obtener logs de la API del gestor
+            # Verificar salud de la API
             response = requests.get(
                 f"{self.gestor_api_url}/health",
                 timeout=5
@@ -202,14 +226,66 @@ class DatabaseMonitor:
                     },
                     is_suspicious=False
                 )
+            
+            # Monitorear operaciones recientes en la base de datos del gestor
+            # para detectar patrones sospechosos
+            db = self.get_gestor_db()
+            
+            # Verificar si hay cambios recientes en colecciones críticas
+            orders_collection = db['orders']
+            
+            # Obtener últimos pedidos creados
+            recent_orders = list(orders_collection.find()
+                                .sort('created_at', -1)
+                                .limit(5))
+            
+            for order in recent_orders:
+                # Verificar si el pedido tiene características sospechosas
+                is_suspicious = False
+                suspicious_reasons = []
+                
+                # Verificar si hay demasiados items (posible ataque de DoS)
+                items = order.get('items', [])
+                if len(items) > 100:
+                    is_suspicious = True
+                    suspicious_reasons.append('Excesivo número de items')
+                
+                # Verificar campos inesperados
+                allowed_fields = ['_id', 'erp_order_id', 'items', 'status', 'created_at']
+                unexpected_fields = [k for k in order.keys() if k not in allowed_fields]
+                if unexpected_fields:
+                    is_suspicious = True
+                    suspicious_reasons.append(f'Campos inesperados: {unexpected_fields}')
+                
+                if is_suspicious:
+                    self.log_operation(
+                        'SUSPICIOUS_ORDER',
+                        {
+                            'order_id': str(order.get('_id', 'unknown')),
+                            'erp_order_id': order.get('erp_order_id', 'unknown'),
+                            'reasons': suspicious_reasons,
+                            'order_data': {k: v for k, v in order.items() if k != '_id'}
+                        },
+                        is_suspicious=True
+                    )
+                else:
+                    self.log_operation(
+                        'ORDER_CREATED',
+                        {
+                            'order_id': str(order.get('_id', 'unknown')),
+                            'erp_order_id': order.get('erp_order_id', 'unknown'),
+                            'items_count': len(items)
+                        },
+                        is_suspicious=False
+                    )
+                    
         except Exception as e:
-            logger.warning(f"No se pudo conectar a la API del gestor: {e}")
+            logger.warning(f"Error monitoreando API del gestor: {e}")
             self.log_operation(
-                'API_CHECK',
+                'API_MONITORING_ERROR',
                 {
-                    'endpoint': '/health',
-                    'status': 'error',
-                    'error': str(e)
+                    'error': str(e),
+                    'type': 'api_monitoring'
                 },
                 is_suspicious=False
             )
@@ -244,11 +320,8 @@ class DatabaseMonitor:
 
 # Inicializar el monitor usando Config
 config_dict = {
-    'GESTOR_DB_HOST': Config.GESTOR_DB_HOST,
-    'GESTOR_DB_PORT': str(Config.GESTOR_DB_PORT),
-    'GESTOR_DB_USER': Config.GESTOR_DB_USER,
-    'GESTOR_DB_PASSWORD': Config.GESTOR_DB_PASSWORD,
-    'GESTOR_DB_NAME': Config.GESTOR_DB_NAME,
+    'GESTOR_MONGO_URI': Config.GESTOR_MONGO_URI,
+    'GESTOR_MONGO_DB': Config.GESTOR_MONGO_DB,
     'LOG_DB_HOST': Config.LOG_DB_HOST,
     'LOG_DB_PORT': str(Config.LOG_DB_PORT),
     'LOG_DB_USER': Config.LOG_DB_USER,
@@ -275,9 +348,27 @@ def receive_log():
     """Endpoint para recibir logs del gestor de pedidos"""
     try:
         data = request.json
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'message': 'No se recibieron datos'
+            }), 400
+        
         operation_type = data.get('operation_type', 'UNKNOWN')
         details = data.get('details', {})
         is_suspicious = data.get('is_suspicious', False)
+        
+        # Añadir información de la petición
+        details['ip_origen'] = request.remote_addr
+        details['user_agent'] = request.headers.get('User-Agent', 'unknown')
+        
+        # Verificar si la operación es sospechosa
+        if monitor.is_suspicious_operation({
+            'operation': operation_type,
+            'collection': details.get('collection', ''),
+            'command': details.get('command', {})
+        }):
+            is_suspicious = True
         
         monitor.log_operation(operation_type, details, is_suspicious)
         
@@ -294,9 +385,9 @@ def receive_log():
 
 @app.route('/logs', methods=['GET'])
 def get_logs():
-    """Obtiene los logs registrados"""
+    """Obtiene los logs registrados desde MySQL (LOGSEGURIDAD)"""
     try:
-        conn = monitor.get_connection('log')
+        conn = monitor.get_log_connection()
         if not conn:
             return jsonify({'error': 'No se pudo conectar a la BD de logs'}), 500
         
@@ -342,9 +433,9 @@ def get_logs():
 
 @app.route('/stats', methods=['GET'])
 def get_stats():
-    """Obtiene estadísticas de monitoreo"""
+    """Obtiene estadísticas de monitoreo desde MySQL (LOGSEGURIDAD)"""
     try:
-        conn = monitor.get_connection('log')
+        conn = monitor.get_log_connection()
         if not conn:
             return jsonify({'error': 'No se pudo conectar a la BD de logs'}), 500
         
@@ -362,6 +453,7 @@ def get_stats():
                 SELECT tipo_operacion, COUNT(*) as cantidad 
                 FROM operaciones_log 
                 GROUP BY tipo_operacion
+                ORDER BY cantidad DESC
             """)
             by_type = cursor.fetchall()
             

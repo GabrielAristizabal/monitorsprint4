@@ -11,14 +11,11 @@ load_dotenv()
 class Config:
     """Configuración base"""
     
-    # Base de datos del gestor de pedidos
-    GESTOR_DB_HOST = os.getenv('GESTOR_DB_HOST', 'localhost')
-    GESTOR_DB_PORT = int(os.getenv('GESTOR_DB_PORT', 3306))
-    GESTOR_DB_USER = os.getenv('GESTOR_DB_USER', 'root')
-    GESTOR_DB_PASSWORD = os.getenv('GESTOR_DB_PASSWORD', '')
-    GESTOR_DB_NAME = os.getenv('GESTOR_DB_NAME', 'pedidos')
+    # Base de datos del gestor de pedidos (MongoDB - para monitoreo)
+    GESTOR_MONGO_URI = os.getenv('GESTOR_MONGO_URI', 'mongodb://localhost:27017')
+    GESTOR_MONGO_DB = os.getenv('GESTOR_MONGO_DB', 'provesi_wms')
     
-    # Base de datos de logs
+    # Base de datos de logs (MySQL - LOGSEGURIDAD)
     LOG_DB_HOST = os.getenv('LOG_DB_HOST', 'localhost')
     LOG_DB_PORT = int(os.getenv('LOG_DB_PORT', 3306))
     LOG_DB_USER = os.getenv('LOG_DB_USER', 'root')

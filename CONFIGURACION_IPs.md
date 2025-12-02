@@ -1,180 +1,335 @@
-# Guía de Configuración de IPs y Variables de Entorno
+# 🔧 Guía de Configuración de IPs y Comunicación entre Microservicios
 
-## ⚠️ IMPORTANTE: Variables que DEBES Cambiar
+Esta guía te ayudará a configurar las IPs y conexiones entre los microservicios una vez que estén desplegados en las instancias EC2.
 
-Antes de desplegar el microservicio de monitoreo, debes configurar las siguientes variables con las IPs reales de tus instancias EC2.
+## 📋 Arquitectura de Microservicios
 
-### 1. Archivo `.env`
+```
+┌─────────────────┐
+│  GestorPedidos  │  Puerto: 5000
+│   (FastAPI)     │  MongoDB: provesi_wms
+└────────┬────────┘
+         │
+         ├─── Monitoreado por ───┐
+         │                       │
+         │                       ▼
+         │              ┌─────────────────┐
+         │              │     Monitor     │  Puerto: 5001
+         │              │     (Flask)     │  MySQL: LOGSEGURIDAD
+         │              └─────────────────┘
+         │
+         ▼
+┌─────────────────┐
+│   ruta_optima   │  Puerto: 8000
+│    (Django)     │  MongoDB: ruta_optima_db
+└─────────────────┘
+```
 
-Copia el archivo `env.example` a `.env` y edita las siguientes variables:
+## 🗂️ Archivos de Configuración por Microservicio
 
+### 1. **GestorPedidos** 
+
+**Ubicación:** `GestorPedidos/provesi-orders-mongo/microservices/orders-mongo-service/.env`
+
+**Crear archivo:**
 ```bash
+cd GestorPedidos/provesi-orders-mongo/microservices/orders-mongo-service
+cp .env.example .env
+nano .env
+```
+
+**Variables a configurar:**
+```env
+# ⚠️ CAMBIAR: IP de la instancia donde está MongoDB
+# Si MongoDB está en la misma instancia: mongodb://localhost:27017
+# Si MongoDB está en otra instancia: mongodb://172.31.XX.XX:27017
+MONGO_URI=mongodb://172.31.XX.XX:27017
+MONGO_DB=provesi_wms
+
+# Si MongoDB tiene autenticación:
+# MONGO_URI=mongodb://usuario:password@172.31.XX.XX:27017/provesi_wms
+
+# Puerto de la API (por defecto 5000)
+PORT=5000
+```
+
+**Ejemplo con IP real:**
+```env
+MONGO_URI=mongodb://172.31.15.10:27017
+MONGO_DB=provesi_wms
+PORT=5000
+```
+
+---
+
+### 2. **ruta_optima**
+
+**Ubicación:** `ruta_optima/.env`
+
+**Crear archivo:**
+```bash
+cd ruta_optima
+cp .env.example .env
+nano .env
+```
+
+**Variables a configurar:**
+```env
+# ⚠️ CAMBIAR: IP de la instancia donde está MongoDB
+# Puede ser la misma que GestorPedidos o diferente
+MONGO_URI=mongodb://172.31.XX.XX:27017
+MONGO_DB=ruta_optima_db
+
+# Si MongoDB tiene autenticación:
+# MONGO_URI=mongodb://usuario:password@172.31.XX.XX:27017/ruta_optima_db
+
+# Puerto de Django (por defecto 8000)
+PORT=8000
+```
+
+**Ejemplo con IP real:**
+```env
+MONGO_URI=mongodb://172.31.15.10:27017
+MONGO_DB=ruta_optima_db
+PORT=8000
+```
+
+---
+
+### 3. **Monitor (mnitor)**
+
+**Ubicación:** `mnitor/.env`
+
+**Crear archivo:**
+```bash
+cd mnitor
 cp env.example .env
 nano .env
 ```
 
-### 2. Variables a Configurar
-
-#### Base de Datos del Gestor de Pedidos
-
+**Variables a configurar:**
 ```env
-GESTOR_DB_HOST=172.31.XX.XX  # ⚠️ CAMBIAR: IP privada de la instancia EC2 del gestor
-GESTOR_DB_PORT=3306
-GESTOR_DB_USER=gestor_user    # ⚠️ CAMBIAR: Usuario de BD del gestor
-GESTOR_DB_PASSWORD=password   # ⚠️ CAMBIAR: Password de BD del gestor
-GESTOR_DB_NAME=pedidos        # ⚠️ CAMBIAR si tu BD tiene otro nombre
-```
+# ⚠️ CAMBIAR: MongoDB del gestor (para monitorear)
+GESTOR_MONGO_URI=mongodb://172.31.XX.XX:27017
+GESTOR_MONGO_DB=provesi_wms
 
-**Cómo obtener la IP:**
-- En AWS Console → EC2 → Instancias → Selecciona la instancia del gestor
-- Copia la **IP Privada IPv4** (formato: 172.31.x.x o 10.x.x.x)
-
-#### Base de Datos de Logs (LOGSEGURIDAD)
-
-```env
-LOG_DB_HOST=172.31.XX.XX      # ⚠️ CAMBIAR: IP de la instancia donde está LOGSEGURIDAD
+# ⚠️ CAMBIAR: MySQL para guardar logs (LOGSEGURIDAD)
+LOG_DB_HOST=172.31.XX.XX
 LOG_DB_PORT=3306
-LOG_DB_USER=log_user          # ⚠️ CAMBIAR: Usuario para acceder a LOGSEGURIDAD
-LOG_DB_PASSWORD=password      # ⚠️ CAMBIAR: Password para LOGSEGURIDAD
-LOG_DB_NAME=LOGSEGURIDAD
-```
-
-**Nota:** Si LOGSEGURIDAD está en la misma instancia que el gestor, usa la misma IP privada.
-
-#### API del Gestor de Pedidos
-
-```env
-GESTOR_API_URL=http://172.31.XX.XX:5000  # ⚠️ CAMBIAR: IP y puerto de la API del gestor
-```
-
-**Opciones:**
-- Si el monitor está en la misma VPC: Usa la **IP privada** (172.31.x.x)
-- Si el monitor está en otra VPC: Usa la **IP pública** o configura VPC Peering
-- Si hay un Load Balancer: Usa la URL del Load Balancer
-
-#### Configuración del Monitor
-
-```env
-MONITOR_PORT=5001             # Puerto donde escuchará el monitor (puedes cambiarlo)
-MONITOR_INTERVAL=30           # Intervalo de monitoreo en segundos (30 = cada 30 seg)
-```
-
-## Ejemplo de Configuración Completa
-
-Supongamos que tienes:
-
-- **Instancia Gestor EC2**: IP privada `172.31.15.10`, IP pública `54.123.45.67`
-- **Instancia Monitor EC2**: IP privada `172.31.15.11`
-- **Base de datos LOGSEGURIDAD**: En la misma instancia del gestor (`172.31.15.10`)
-
-Tu archivo `.env` debería verse así:
-
-```env
-# Base de datos del gestor
-GESTOR_DB_HOST=172.31.15.10
-GESTOR_DB_PORT=3306
-GESTOR_DB_USER=gestor_user
-GESTOR_DB_PASSWORD=mi_password_seguro
-GESTOR_DB_NAME=pedidos
-
-# Base de datos de logs (misma instancia que el gestor)
-LOG_DB_HOST=172.31.15.10
-LOG_DB_PORT=3306
-LOG_DB_USER=log_user
-LOG_DB_PASSWORD=mi_password_logs
+LOG_DB_USER=root
+LOG_DB_PASSWORD=tu_password_aqui
 LOG_DB_NAME=LOGSEGURIDAD
 
-# API del gestor (usando IP privada dentro de la VPC)
-GESTOR_API_URL=http://172.31.15.10:5000
+# ⚠️ CAMBIAR: URL de la API del gestor
+GESTOR_API_URL=http://172.31.XX.XX:5000
 
 # Configuración del monitor
 MONITOR_PORT=5001
 MONITOR_INTERVAL=30
 ```
 
-## Configuración de Security Groups en AWS
+**Ejemplo con IPs reales:**
+```env
+# MongoDB del gestor (misma instancia o diferente)
+GESTOR_MONGO_URI=mongodb://172.31.15.10:27017
+GESTOR_MONGO_DB=provesi_wms
 
-Para que el monitor pueda conectarse, configura los Security Groups:
+# MySQL para logs (puede estar en la misma instancia del gestor)
+LOG_DB_HOST=172.31.15.10
+LOG_DB_PORT=3306
+LOG_DB_USER=log_admin
+LOG_DB_PASSWORD=miPasswordSeguro123
+LOG_DB_NAME=LOGSEGURIDAD
 
-### Security Group del Gestor de Pedidos
+# API del gestor (IP privada dentro de la VPC)
+GESTOR_API_URL=http://172.31.15.10:5000
 
-**Regla de entrada para MySQL:**
+MONITOR_PORT=5001
+MONITOR_INTERVAL=30
+```
+
+---
+
+## 📍 Escenarios de Despliegue
+
+### Escenario 1: Todo en la misma instancia
+
+Si todos los microservicios están en la misma instancia EC2:
+
+**GestorPedidos:**
+```env
+MONGO_URI=mongodb://localhost:27017
+```
+
+**ruta_optima:**
+```env
+MONGO_URI=mongodb://localhost:27017
+```
+
+**Monitor:**
+```env
+GESTOR_MONGO_URI=mongodb://localhost:27017
+LOG_DB_HOST=localhost
+GESTOR_API_URL=http://localhost:5000
+```
+
+---
+
+### Escenario 2: Microservicios en instancias separadas
+
+**Instancia 1 (IP: 172.31.15.10):**
+- GestorPedidos
+- MongoDB
+- MySQL (LOGSEGURIDAD)
+
+**Instancia 2 (IP: 172.31.15.11):**
+- Monitor
+
+**Instancia 3 (IP: 172.31.15.12):**
+- ruta_optima
+
+**Configuración:**
+
+**GestorPedidos (Instancia 1):**
+```env
+MONGO_URI=mongodb://localhost:27017
+```
+
+**Monitor (Instancia 2):**
+```env
+GESTOR_MONGO_URI=mongodb://172.31.15.10:27017
+LOG_DB_HOST=172.31.15.10
+GESTOR_API_URL=http://172.31.15.10:5000
+```
+
+**ruta_optima (Instancia 3):**
+```env
+MONGO_URI=mongodb://172.31.15.10:27017
+```
+
+---
+
+## 🔒 Configuración de Security Groups en AWS
+
+Para que los microservicios se comuniquen, configura los Security Groups:
+
+### Security Group de MongoDB
+
+**Reglas de entrada:**
+- Tipo: Custom TCP
+- Puerto: 27017
+- Origen: 
+  - IP privada de GestorPedidos (172.31.15.10/32)
+  - IP privada de ruta_optima (172.31.15.12/32)
+  - IP privada de Monitor (172.31.15.11/32)
+  - O mejor: Security Group de cada microservicio
+
+### Security Group de MySQL (LOGSEGURIDAD)
+
+**Reglas de entrada:**
 - Tipo: MySQL/Aurora
 - Puerto: 3306
-- Origen: IP privada del monitor (`172.31.15.11/32`) o Security Group del monitor
+- Origen: IP privada del Monitor (172.31.15.11/32) o su Security Group
 
-**Regla de entrada para API:**
+### Security Group de GestorPedidos
+
+**Reglas de entrada:**
 - Tipo: Custom TCP
 - Puerto: 5000
-- Origen: IP privada del monitor o Security Group del monitor
+- Origen: IP privada del Monitor (172.31.15.11/32) o su Security Group
 
-### Security Group del Monitor
+### Security Group de Monitor
 
-**Regla de entrada para API del Monitor:**
+**Reglas de entrada:**
 - Tipo: Custom TCP
 - Puerto: 5001
-- Origen: Tu IP pública (para acceso administrativo) o Security Group específico
+- Origen: Tu IP pública (para acceso administrativo)
 
-**Regla de salida:**
-- Permitir todo el tráfico saliente (por defecto)
+**Reglas de salida:**
+- Permitir todo (por defecto)
 
-## Verificación de Conectividad
+### Security Group de ruta_optima
 
-Antes de iniciar el servicio, verifica la conectividad:
+**Reglas de entrada:**
+- Tipo: Custom TCP
+- Puerto: 8000
+- Origen: IP privada del GestorPedidos o Security Group específico
 
-### 1. Desde la instancia del monitor, prueba conexión a BD del gestor:
+---
 
-```bash
-mysql -h 172.31.15.10 -u gestor_user -p -e "SHOW DATABASES;"
-```
+## ✅ Verificación de Conectividad
 
-### 2. Prueba conexión a la API del gestor:
-
-```bash
-curl http://172.31.15.10:5000/health
-```
-
-### 3. Prueba conexión a LOGSEGURIDAD:
+### 1. Verificar MongoDB desde GestorPedidos
 
 ```bash
-mysql -h 172.31.15.10 -u log_user -p -e "USE LOGSEGURIDAD; SHOW TABLES;"
+# En la instancia de GestorPedidos
+mongo mongodb://172.31.XX.XX:27017/provesi_wms
+# O si está local:
+mongo
 ```
 
-## Troubleshooting de Conectividad
+### 2. Verificar MySQL desde Monitor
 
-### Error: "Can't connect to MySQL server"
+```bash
+# En la instancia del Monitor
+mysql -h 172.31.XX.XX -u log_user -p -e "SHOW DATABASES;"
+```
 
-1. Verifica que la IP en `.env` sea correcta
-2. Verifica Security Groups en AWS
-3. Verifica que MySQL esté escuchando en todas las interfaces:
-   ```sql
-   -- En el servidor MySQL
-   SHOW VARIABLES LIKE 'bind_address';
-   -- Debe ser 0.0.0.0 o la IP específica
-   ```
-4. Verifica que el usuario tenga permisos para conectarse desde la IP del monitor:
-   ```sql
-   -- En el servidor MySQL
-   CREATE USER 'gestor_user'@'172.31.15.11' IDENTIFIED BY 'password';
-   GRANT ALL PRIVILEGES ON pedidos.* TO 'gestor_user'@'172.31.15.11';
-   FLUSH PRIVILEGES;
-   ```
+### 3. Verificar API del Gestor desde Monitor
 
-### Error: "Connection refused" en la API
+```bash
+# En la instancia del Monitor
+curl http://172.31.XX.XX:5000/health
+```
 
-1. Verifica que la API del gestor esté ejecutándose
-2. Verifica que el puerto sea correcto (5000)
-3. Verifica Security Groups
-4. Verifica que la API esté escuchando en `0.0.0.0` y no solo en `localhost`
+### 4. Verificar MongoDB desde ruta_optima
 
-## Checklist Pre-Despliegue
+```bash
+# En la instancia de ruta_optima
+mongo mongodb://172.31.XX.XX:27017/ruta_optima_db
+```
 
-- [ ] Archivo `.env` creado y configurado con IPs reales
-- [ ] Credenciales de base de datos verificadas
-- [ ] Security Groups configurados correctamente
-- [ ] Conectividad a BD del gestor verificada
-- [ ] Conectividad a BD de logs verificada
-- [ ] Conectividad a API del gestor verificada
-- [ ] Base de datos LOGSEGURIDAD creada (ejecutar `schema.sql`)
-- [ ] Usuarios de MySQL creados con permisos adecuados
+---
+
+## 🔄 Flujo de Comunicación
+
+1. **GestorPedidos** → MongoDB (guarda pedidos)
+2. **Monitor** → MongoDB del gestor (lee pedidos para monitorear)
+3. **Monitor** → MySQL LOGSEGURIDAD (guarda logs)
+4. **Monitor** → API del Gestor (verifica salud)
+5. **ruta_optima** → MongoDB (guarda rutas calculadas)
+
+---
+
+## 📝 Resumen de IPs a Configurar
+
+| Microservicio | Variable | Descripción | Ejemplo |
+|--------------|----------|-------------|---------|
+| **GestorPedidos** | `MONGO_URI` | IP de MongoDB | `mongodb://172.31.15.10:27017` |
+| **ruta_optima** | `MONGO_URI` | IP de MongoDB | `mongodb://172.31.15.10:27017` |
+| **Monitor** | `GESTOR_MONGO_URI` | IP de MongoDB del gestor | `mongodb://172.31.15.10:27017` |
+| **Monitor** | `LOG_DB_HOST` | IP de MySQL (LOGSEGURIDAD) | `172.31.15.10` |
+| **Monitor** | `GESTOR_API_URL` | IP y puerto de la API del gestor | `http://172.31.15.10:5000` |
+
+---
+
+## 🚨 Troubleshooting
+
+### Error: "Connection refused"
+- Verifica que el servicio esté corriendo
+- Verifica que el puerto esté abierto en el Security Group
+- Verifica que la IP sea correcta (privada dentro de VPC)
+
+### Error: "Authentication failed" (MongoDB)
+- Verifica usuario y contraseña en `MONGO_URI`
+- Formato: `mongodb://usuario:password@ip:puerto/database`
+
+### Error: "Access denied" (MySQL)
+- Verifica usuario y contraseña
+- Verifica que el usuario tenga permisos desde la IP del monitor
+- Ejecuta: `GRANT ALL ON LOGSEGURIDAD.* TO 'log_user'@'172.31.15.11' IDENTIFIED BY 'password';`
+
+---
+
+¿Necesitas ayuda con alguna configuración específica?
 
