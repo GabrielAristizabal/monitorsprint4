@@ -82,11 +82,21 @@ class ServiceClient:
             )
             elapsed = time.time() - start_time
             
+            # Manejar diferentes códigos de estado
             if response.status_code == 200:
                 return response.json()
+            elif response.status_code == 404:
+                # 404 puede ser válido (ruta no encontrada), devolver el JSON
+                try:
+                    return response.json()
+                except:
+                    return {"status": "NOT_FOUND", "mensaje": "Recurso no encontrado"}
             else:
-                print(f"Error llamando a {full_url}: {response.status_code}")
-                return None
+                print(f"Error llamando a {full_url}: {response.status_code} - {response.text}")
+                try:
+                    return response.json()
+                except:
+                    return None
         except requests.exceptions.Timeout:
             print(f"Timeout llamando a {full_url}")
             return None

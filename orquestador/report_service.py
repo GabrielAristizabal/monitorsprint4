@@ -106,7 +106,17 @@ class ReportService:
             # 2. Para cada pedido, obtener su ruta calculada
             orders_with_routes = []
             for order in orders:
-                route_data = self._get_route_for_order(order.get('erp_order_id'))
+                erp_order_id = order.get('erp_order_id')
+                order_id = order.get('id')
+                print(f"🔍 Buscando ruta para pedido - erp_order_id: {erp_order_id}, id: {order_id}")
+                
+                # Intentar primero con erp_order_id
+                route_data = self._get_route_for_order(erp_order_id)
+                
+                # Si no se encuentra, intentar con el id de MongoDB
+                if not route_data and order_id:
+                    print(f"⚠️ No se encontró ruta con erp_order_id, intentando con id: {order_id}")
+                    route_data = self._get_route_for_order(order_id)
                 
                 # Calcular tiempos reales para este pedido
                 items_with_real_times = []
@@ -196,13 +206,23 @@ class ReportService:
                 method='GET'
             )
             
-            if response and response.get('status') == 'OK':
-                return response.get('ruta')
+            if response:
+                if response.get('status') == 'OK':
+                    return response.get('ruta')
+                elif response.get('status') == 'NOT_FOUND':
+                    print(f"⚠️ Ruta no encontrada para pedido {order_id}: {response.get('mensaje', 'Sin mensaje')}")
+                    return None
+                else:
+                    print(f"⚠️ Respuesta inesperada de ruta_optima para pedido {order_id}: {response}")
+                    return None
             
+            print(f"⚠️ No se recibió respuesta de ruta_optima para pedido {order_id}")
             return None
             
         except Exception as e:
-            print(f"Error obteniendo ruta para pedido {order_id}: {e}")
+            print(f"❌ Error obteniendo ruta para pedido {order_id}: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def _calculate_and_save_real_times(self, orders_with_routes: List[Dict]) -> List[Dict]:
