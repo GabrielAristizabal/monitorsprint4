@@ -3,6 +3,6 @@ from pydantic import BaseModel
 
 class Settings(BaseModel):
     mongo_uri: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
-    mongo_db: str = os.getenv("MONGO_DB", "provesi_wms")
+    mongo_db: str = os.getenv("MONGO_DB", "ruta_optima")
 
 settings = Settings()
