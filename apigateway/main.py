@@ -60,7 +60,19 @@ async def get_service_base_url(service_name: str, fallback_url: Optional[str] = 
                 port = service_data.get("port")
                 
                 if host and port:
-                    return f"http://{host}:{port}"
+                    # Asegurar que el puerto es un entero válido
+                    try:
+                        port_int = int(port)
+                        if 1 <= port_int <= 65535:
+                            return f"http://{host}:{port_int}"
+                        else:
+                            raise ValueError(f"Puerto fuera de rango: {port_int}")
+                    except (ValueError, TypeError) as e:
+                        print(f"⚠️ Error con puerto '{port}': {e}")
+                        # Si el puerto es inválido, intentar usar la URL directamente
+                        url = service_data.get("url")
+                        if url:
+                            return url
             
             # Si no tiene host/port, intentar usar la URL directamente
             url = service_data.get("url")
@@ -157,8 +169,13 @@ async def get_rutas_optimizadas(
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(f"{ORQUESTADOR_URL}/reports/rutas-optimizadas", params=params)
+            resp.raise_for_status()
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Timeout llamando al orquestador")
     except httpx.RequestError as e:
         raise HTTPException(status_code=502, detail=f"Error llamando al orquestador: {str(e)}")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=f"Error del orquestador: {e.response.text}")
 
     # Pasamos tal cual la respuesta del orquestador
     return JSONResponse(status_code=resp.status_code, content=resp.json())
