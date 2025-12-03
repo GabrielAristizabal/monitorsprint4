@@ -12,10 +12,10 @@ class ServiceRegistry:
     Los servicios se registran automáticamente al iniciar.
     """
     
-    def __init__(self):
+    def __init__(self, ttl: int = 30):
         self._services: Dict[str, Dict] = {}
         self._lock = threading.Lock()
-        self._ttl = 30  # Tiempo de vida en segundos
+        self._ttl = ttl  # Tiempo de vida en segundos
         
     def register(self, service_name: str, host: str, port: int, metadata: Optional[Dict] = None):
         """
@@ -121,5 +121,6 @@ class ServiceRegistry:
                 print(f"🧹 Servicio expirado eliminado: {key}")
 
 # Instancia global del registry
-registry = ServiceRegistry()
+# Se inicializará con TTL desde Config en main.py
+registry = None
 

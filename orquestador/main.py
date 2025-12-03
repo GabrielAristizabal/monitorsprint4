@@ -7,8 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, List
 import uvicorn
 from .config import Config
-from .service_registry import registry
+from .service_registry import ServiceRegistry, registry as _registry_module
 from .report_service import ReportService
+
+# Inicializar registry con TTL desde configuración
+registry = ServiceRegistry(ttl=Config.SERVICE_TTL)
+# Actualizar la instancia global
+_registry_module.registry = registry
 
 app = FastAPI(title="Orquestador de Microservicios", version="1.0.0")
 
