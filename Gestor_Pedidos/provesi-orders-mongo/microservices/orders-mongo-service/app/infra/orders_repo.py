@@ -7,11 +7,23 @@ COLLECTION = "orders"
 
 
 async def insert_order(order_data: Dict[str, Any]) -> str:
+    """
+    order_data puede ser:
+    - un Pydantic model (OrderCreate)
+    - o un dict normal (si ya lo convertiste antes)
+    """
     db = get_db()
 
-    items = order_data.get("items", [])
+    # Si viene como modelo Pydantic, lo convertimos a dict
+    if hasattr(order_data, "model_dump"):
+        order_dict = order_data.model_dump()
+    elif hasattr(order_data, "dict"):
+        order_dict = order_data.dict()
+    else:
+        order_dict = dict(order_data)
 
-    # Si algún item es modelo Pydantic lo convertimos, si es dict lo dejamos igual
+    items = order_dict.get("items", [])
+
     normalized_items = []
     for item in items:
         if hasattr(item, "model_dump"):
@@ -22,7 +34,7 @@ async def insert_order(order_data: Dict[str, Any]) -> str:
             normalized_items.append(item)  # dict u otro tipo simple
 
     doc = {
-        "erp_order_id": order_data["erp_order_id"],
+        "erp_order_id": order_dict["erp_order_id"],
         "items": normalized_items,
         "status": "CREATED",
         "created_at": datetime.utcnow(),
