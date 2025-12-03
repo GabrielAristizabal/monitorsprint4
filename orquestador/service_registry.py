@@ -122,5 +122,6 @@ class ServiceRegistry:
 
 # Instancia global del registry
 # Se inicializará con TTL desde Config en main.py
-registry = None
+# Por defecto usa 30 segundos
+registry = ServiceRegistry(ttl=30)
 
