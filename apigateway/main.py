@@ -168,14 +168,30 @@ async def get_rutas_optimizadas(
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{ORQUESTADOR_URL}/reports/rutas-optimizadas", params=params)
+            url = f"{ORQUESTADOR_URL}/reports/rutas-optimizadas"
+            print(f"🔍 Llamando a orquestador: {url} con params: {params}")
+            resp = await client.get(url, params=params)
             resp.raise_for_status()
     except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Timeout llamando al orquestador")
+        raise HTTPException(
+            status_code=504, 
+            detail=f"Timeout llamando al orquestador en {ORQUESTADOR_URL}. Verifica que el orquestador esté corriendo y accesible."
+        )
+    except httpx.ConnectError as e:
+        raise HTTPException(
+            status_code=502, 
+            detail=f"No se pudo conectar al orquestador en {ORQUESTADOR_URL}. Error: {str(e)}. Verifica la configuración de ORQUESTADOR_URL en el archivo .env"
+        )
     except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"Error llamando al orquestador: {str(e)}")
+        raise HTTPException(
+            status_code=502, 
+            detail=f"Error llamando al orquestador en {ORQUESTADOR_URL}: {str(e)}"
+        )
     except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=e.response.status_code, detail=f"Error del orquestador: {e.response.text}")
+        raise HTTPException(
+            status_code=e.response.status_code, 
+            detail=f"Error del orquestador ({e.response.status_code}): {e.response.text}"
+        )
 
     # Pasamos tal cual la respuesta del orquestador
     return JSONResponse(status_code=resp.status_code, content=resp.json())
@@ -192,14 +208,30 @@ async def get_pedidos_con_rutas(
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{ORQUESTADOR_URL}/reports/pedidos-con-rutas", params=params)
+            url = f"{ORQUESTADOR_URL}/reports/pedidos-con-rutas"
+            print(f"🔍 Llamando a orquestador: {url} con params: {params}")
+            resp = await client.get(url, params=params)
             resp.raise_for_status()
     except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Timeout llamando al orquestador")
+        raise HTTPException(
+            status_code=504, 
+            detail=f"Timeout llamando al orquestador en {ORQUESTADOR_URL}. Verifica que el orquestador esté corriendo y accesible."
+        )
+    except httpx.ConnectError as e:
+        raise HTTPException(
+            status_code=502, 
+            detail=f"No se pudo conectar al orquestador en {ORQUESTADOR_URL}. Error: {str(e)}. Verifica la configuración de ORQUESTADOR_URL en el archivo .env"
+        )
     except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"Error llamando al orquestador: {str(e)}")
+        raise HTTPException(
+            status_code=502, 
+            detail=f"Error llamando al orquestador en {ORQUESTADOR_URL}: {str(e)}"
+        )
     except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=e.response.status_code, detail=f"Error del orquestador: {e.response.text}")
+        raise HTTPException(
+            status_code=e.response.status_code, 
+            detail=f"Error del orquestador ({e.response.status_code}): {e.response.text}"
+        )
 
     return JSONResponse(status_code=resp.status_code, content=resp.json())
 
