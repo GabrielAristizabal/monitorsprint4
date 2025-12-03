@@ -67,6 +67,16 @@ class ReportService:
                 'processing_time_ms': round(processing_time, 2),
                 'orders_analyzed': len(orders_with_routes)
             }
+            
+        except Exception as e:
+            print(f"Error generando reporte: {e}")
+            return {
+                'month': month,
+                'orders_count': 0,
+                'stands_con_problema': [],
+                'error': str(e),
+                'processing_time_ms': round((time.time() - start_time) * 1000, 2)
+            }
     
     def get_orders_with_routes_detailed(self, month: str) -> Dict:
         """
@@ -155,16 +165,6 @@ class ReportService:
                 'month': month,
                 'orders_count': 0,
                 'orders': [],
-                'error': str(e),
-                'processing_time_ms': round((time.time() - start_time) * 1000, 2)
-            }
-            
-        except Exception as e:
-            print(f"Error generando reporte: {e}")
-            return {
-                'month': month,
-                'orders_count': 0,
-                'stands_con_problema': [],
                 'error': str(e),
                 'processing_time_ms': round((time.time() - start_time) * 1000, 2)
             }
