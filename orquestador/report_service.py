@@ -67,6 +67,97 @@ class ReportService:
                 'processing_time_ms': round(processing_time, 2),
                 'orders_analyzed': len(orders_with_routes)
             }
+    
+    def get_orders_with_routes_detailed(self, month: str) -> Dict:
+        """
+        Obtiene los últimos 10 pedidos del mes anterior con toda su información
+        y las rutas optimizadas calculadas para cada uno.
+        
+        Args:
+            month: Mes en formato YYYY-MM (ej: "2025-11")
+        
+        Returns:
+            Dict con la información completa de pedidos y rutas
+        """
+        start_time = time.time()
+        
+        try:
+            # 1. Obtener últimos 10 pedidos del mes anterior
+            orders = self._get_last_10_orders_from_previous_month(month)
+            
+            if not orders or len(orders) == 0:
+                return {
+                    'month': month,
+                    'orders_count': 0,
+                    'orders': [],
+                    'processing_time_ms': round((time.time() - start_time) * 1000, 2)
+                }
+            
+            # 2. Para cada pedido, obtener su ruta calculada
+            orders_with_routes = []
+            for order in orders:
+                route_data = self._get_route_for_order(order.get('erp_order_id'))
+                
+                # Calcular tiempos reales para este pedido
+                items_with_real_times = []
+                for item in order.get('items', []):
+                    tiempo_estimado = item.get('tiempo_estimado_pick', 5.0)
+                    # Generar tiempo real aleatorio (80% a 150% del estimado)
+                    variacion = random.uniform(0.8, 1.5)
+                    tiempo_real = round(tiempo_estimado * variacion, 2)
+                    
+                    items_with_real_times.append({
+                        **item,
+                        'tiempo_real_pick': tiempo_real
+                    })
+                
+                # Calcular tiempo total real
+                tiempo_total_real = round(sum(item.get('tiempo_real_pick', 0) for item in items_with_real_times), 2)
+                
+                order_detail = {
+                    'order_id': order.get('id'),
+                    'erp_order_id': order.get('erp_order_id'),
+                    'status': order.get('status'),
+                    'created_at': order.get('created_at'),
+                    'items': items_with_real_times,
+                    'tiempo_total_estimado': sum(item.get('tiempo_estimado_pick', 0) for item in items_with_real_times),
+                    'tiempo_total_real': tiempo_total_real
+                }
+                
+                if route_data:
+                    order_detail['ruta_optimizada'] = {
+                        'ruta': route_data.get('ruta', []),
+                        'distancia_m': route_data.get('distancia_m', 0),
+                        'tiempo_caminar_seg': route_data.get('tiempo_caminar_seg', 0),
+                        'tiempo_picking_seg': route_data.get('tiempo_picking_seg', 0),
+                        'tiempo_total_seg': route_data.get('tiempo_total_seg', 0),
+                        'tiempo_total_min': route_data.get('tiempo_total_min', 0),
+                        'items_recogidos': route_data.get('items_recogidos', 0),
+                        'velocidad_usada_m_s': route_data.get('velocidad_usada_m_s', 2.5)
+                    }
+                else:
+                    order_detail['ruta_optimizada'] = None
+                
+                orders_with_routes.append(order_detail)
+            
+            processing_time = (time.time() - start_time) * 1000
+            
+            return {
+                'month': month,
+                'orders_count': len(orders_with_routes),
+                'orders': orders_with_routes,
+                'processing_time_ms': round(processing_time, 2)
+            }
+            
+        except Exception as e:
+            print(f"Error obteniendo pedidos con rutas: {e}")
+            return {
+                'month': month,
+                'orders_count': 0,
+                'orders': [],
+                'error': str(e),
+                'processing_time_ms': round((time.time() - start_time) * 1000, 2)
+            }
             
         except Exception as e:
             print(f"Error generando reporte: {e}")

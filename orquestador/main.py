@@ -110,6 +110,21 @@ async def get_rutas_optimizadas_report(month: str = Query(..., description="Mes 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/reports/pedidos-con-rutas")
+async def get_pedidos_con_rutas(month: str = Query(..., description="Mes en formato YYYY-MM")):
+    """
+    Obtiene los últimos 10 pedidos del mes anterior con toda su información
+    y las rutas optimizadas calculadas para cada uno.
+    """
+    try:
+        result = report_service.get_orders_with_routes_detailed(month)
+        return {
+            "status": "success",
+            **result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/health")
 async def health_check():
     """Health check del orquestador"""

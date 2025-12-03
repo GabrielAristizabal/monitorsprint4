@@ -162,7 +162,7 @@ async def get_rutas_optimizadas(
 ):
     """
     El frontend llama al gateway -> el gateway llama al orquestador
-    para generar el reporte de rutas optimizadas.
+    para generar el reporte de rutas optimizadas (resumen con stands problemáticos).
     """
     params = {"month": month}
 
@@ -178,6 +178,29 @@ async def get_rutas_optimizadas(
         raise HTTPException(status_code=e.response.status_code, detail=f"Error del orquestador: {e.response.text}")
 
     # Pasamos tal cual la respuesta del orquestador
+    return JSONResponse(status_code=resp.status_code, content=resp.json())
+
+@app.get("/reports/pedidos-con-rutas")
+async def get_pedidos_con_rutas(
+    month: str = Query(..., description="Mes en formato YYYY-MM, por ejemplo 2025-01")
+):
+    """
+    Obtiene los últimos 10 pedidos del mes anterior con toda su información
+    y las rutas optimizadas calculadas para cada uno.
+    """
+    params = {"month": month}
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{ORQUESTADOR_URL}/reports/pedidos-con-rutas", params=params)
+            resp.raise_for_status()
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Timeout llamando al orquestador")
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"Error llamando al orquestador: {str(e)}")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=f"Error del orquestador: {e.response.text}")
+
     return JSONResponse(status_code=resp.status_code, content=resp.json())
 
 
