@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from ..domain.models import OrderCreate, OrderOut
 from ..infra.orders_repo import insert_order
 from datetime import datetime
