@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException, Query
 from ..domain.models import OrderCreate, OrderOut
 from ..infra.orders_repo import insert_order
+from app.infra.orders_repo import get_last_10_orders_from_previous_month
+
 from datetime import datetime
 
 router = APIRouter(prefix="/orders", tags=["orders"])
