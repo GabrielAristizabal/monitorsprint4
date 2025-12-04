@@ -23,7 +23,7 @@ class Config:
     LOG_DB_NAME = os.getenv('LOG_DB_NAME', 'logseguridad')
     
     # API del gestor
-    GESTOR_API_URL = os.getenv('GESTOR_API_URL', 'http://localhost:5000')
+    GESTOR_API_URL = os.getenv("GESTOR_API_URL", "http://172.31.74.102:8001")
     
     # Configuración del monitor
     MONITOR_PORT = int(os.getenv('MONITOR_PORT', 5001))
