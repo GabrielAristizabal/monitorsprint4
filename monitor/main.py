@@ -95,10 +95,8 @@ class DatabaseMonitor:
             return None
 
     # NUEVO: método para bloquear la instancia de Gestor de Pedidos
-    def bloquear_gestor_pedidos(self, reason: str, details: Dict):
-        """
-        Llama al endpoint /admin/shutdown del Gestor de Pedidos para detener uvicorn.
-        """
+    def block_gestor(self, reason: str, details: Dict):
+        """Intenta detener el microservicio Gestor de Pedidos vía API"""
         logger.warning(f"⚠️ Bloqueando Gestor de Pedidos por seguridad: {reason}")
         try:
             resp = requests.post(
@@ -471,26 +469,23 @@ def receive_log():
         details['ip_origen'] = request.remote_addr
         details['user_agent'] = request.headers.get('User-Agent', 'unknown')
 
-        # Verificar si la operación es sospechosa
-                # Verificar si la operación es sospechosa
-                # Verificar si la operación es sospechosa
+        # 1) Detección automática por tipo de operación / colección / comando
         detected_suspicious = monitor.is_suspicious_operation({
             'operation': operation_type,
             'collection': details.get('collection', ''),
             'command': details.get('command', {})
         })
 
-        if detected_suspicious:
-            is_suspicious = True
-            # 👉 aquí se dispara el bloqueo
+        # 2) Si el log ya viene marcado como sospechoso o el detector lo ve raro → bloquear Gestor
+        if is_suspicious or detected_suspicious:
+            is_suspicious = True   # nos aseguramos de que quede marcado
             monitor.block_gestor(
-                reason=f"Operación sospechosa detectada: {operation_type}",
+                reason=f"Log sospechoso recibido: {operation_type}",
                 details=details
             )
 
+        # 3) Registrar operación en LOGSEGURIDAD
         monitor.log_operation(operation_type, details, is_suspicious)
-
-
 
         return jsonify({
             'status': 'success',
@@ -502,6 +497,7 @@ def receive_log():
             'status': 'error',
             'message': str(e)
         }), 500
+
 
 
 @app.route('/logs', methods=['GET'])
