@@ -49,6 +49,7 @@ class DatabaseMonitor:
         self.gestor_api_url = config.get('GESTOR_API_URL', 'http://localhost:5000')
         self.monitor_interval = int(config.get('MONITOR_INTERVAL', 30))  # segundos
         self.gestor_block_url = config.get('GESTOR_BLOCK_URL', f"{self.gestor_api_url}/admin/block")
+        self.admin_token = config.get('GESTOR_ADMIN_TOKEN', 'supersecreto123')
 
         # NUEVO: URL para shutdown del gestor y token compartido
         self.gestor_shutdown_url = config.get(
