@@ -96,41 +96,38 @@ class DatabaseMonitor:
             return None
 
     # NUEVO: método para bloquear la instancia de Gestor de Pedidos
-    def bloquear_gestor_pedidos(self, motivo: str, detalles: Dict):
+    def bloquear_gestor_pedidos(self, reason: str, details: Dict):
         """
         Llama al endpoint /admin/shutdown del Gestor de Pedidos para detener uvicorn.
         """
+        logger.warning(f"⚠️ Bloqueando Gestor de Pedidos por seguridad: {reason}")
         try:
-            payload = {
-                "reason": motivo,
-                "last_log": detalles
-            }
-            headers = {
-                "X-Monitor-Token": self.monitor_token,
-                "Content-Type": "application/json"
-            }
-
-            logger.warning(
-                f"Intentando bloquear Gestor de Pedidos en {self.gestor_shutdown_url} "
-                f"por motivo: {motivo}"
-            )
-
             resp = requests.post(
-                self.gestor_shutdown_url,
-                json=payload,
-                headers=headers,
+                f"{self.gestor_api_url}/admin/shutdown",
+                headers={"X-ADMIN-TOKEN": self.admin_token},
                 timeout=5
             )
-
-            if resp.status_code == 200:
-                logger.warning("Gestor de Pedidos bloqueado correctamente por el monitor.")
-            else:
-                logger.error(
-                    f"Error al bloquear Gestor de Pedidos "
-                    f"(status={resp.status_code}): {resp.text}"
-                )
+            self.log_operation(
+                "GESTOR_STOP_REQUEST",
+                {
+                    "reason": reason,
+                    "status_code": resp.status_code,
+                    "response": resp.text,
+                    **details
+                },
+                is_suspicious=True
+            )
         except Exception as e:
-            logger.exception(f"No se pudo bloquear el Gestor de Pedidos: {e}")
+            logger.error(f"Error al intentar apagar el Gestor: {e}")
+            self.log_operation(
+                "GESTOR_STOP_FAILED",
+                {
+                    "reason": reason,
+                    "error": str(e),
+                    **details
+                },
+                is_suspicious=True
+            )
 
     # NUEVO: helper para decidir si se debe disparar el bloqueo
     def _maybe_block_gestor(self, operation_type: str, details: Dict, is_suspicious: bool):
@@ -440,6 +437,7 @@ config_dict = {
     'GESTOR_SHUTDOWN_URL': getattr(Config, 'GESTOR_SHUTDOWN_URL', ''),
     'MONITOR_TOKEN': getattr(Config, 'MONITOR_TOKEN', ''),
     'GESTOR_BLOCK_URL': Config.GESTOR_BLOCK_URL,
+    'GESTOR_ADMIN_TOKEN': Config.GESTOR_ADMIN_TOKEN,
 }
 
 monitor = DatabaseMonitor(config_dict)
@@ -476,30 +474,23 @@ def receive_log():
 
         # Verificar si la operación es sospechosa
                 # Verificar si la operación es sospechosa
-        suspicious = monitor.is_suspicious_operation({
+                # Verificar si la operación es sospechosa
+        detected_suspicious = monitor.is_suspicious_operation({
             'operation': operation_type,
             'collection': details.get('collection', ''),
             'command': details.get('command', {})
         })
 
-        if suspicious:
+        if detected_suspicious:
             is_suspicious = True
-
-            # Intentar bloquear el Gestor de Pedidos
-            try:
-                monitor.block_gestor_instance(
-                    reason=f"Operación sospechosa detectada: {operation_type}",
-                    extra={
-                        "collection": details.get("collection"),
-                        "command": details.get("command"),
-                        "ip_origen": details.get("ip_origen"),
-                        "usuario": details.get("usuario"),
-                    }
-                )
-            except Exception as e:
-                logger.error(f"Error al intentar bloquear el gestor: {e}")
+            # 👉 aquí se dispara el bloqueo
+            monitor.block_gestor(
+                reason=f"Operación sospechosa detectada: {operation_type}",
+                details=details
+            )
 
         monitor.log_operation(operation_type, details, is_suspicious)
+
 
 
         return jsonify({
