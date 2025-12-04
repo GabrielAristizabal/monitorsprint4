@@ -17,10 +17,10 @@ class Config:
     
     # Base de datos de logs (MySQL - LOGSEGURIDAD)
     LOG_DB_HOST = os.getenv('LOG_DB_HOST', 'localhost')
-    LOG_DB_PORT = int(os.getenv('LOG_DB_PORT', 3306))
-    LOG_DB_USER = os.getenv('LOG_DB_USER', 'root')
+    LOG_DB_PORT = int(os.getenv('LOG_DB_PORT', 5432))
+    LOG_DB_USER = os.getenv('LOG_DB_USER', 'monitor_user')
     LOG_DB_PASSWORD = os.getenv('LOG_DB_PASSWORD', '')
-    LOG_DB_NAME = os.getenv('LOG_DB_NAME', 'LOGSEGURIDAD')
+    LOG_DB_NAME = os.getenv('LOG_DB_NAME', 'logseguridad')
     
     # API del gestor
     GESTOR_API_URL = os.getenv('GESTOR_API_URL', 'http://localhost:5000')

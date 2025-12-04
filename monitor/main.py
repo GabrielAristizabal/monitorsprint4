@@ -6,7 +6,7 @@ Monitorea todas las operaciones del gestor y detecta escalamiento de privilegios
 import os
 import time
 import logging
-import pymysql
+import psycopg2
 from datetime import datetime
 from typing import Dict, List, Optional
 import json
@@ -39,11 +39,10 @@ class DatabaseMonitor:
         # Configuración MySQL para logs (LOGSEGURIDAD)
         self.log_db_config = {
             'host': config.get('LOG_DB_HOST', 'localhost'),
-            'port': int(config.get('LOG_DB_PORT', 3306)),
-            'user': config.get('LOG_DB_USER', 'root'),
+            'port': int(config.get('LOG_DB_PORT', 5432)),
+            'user': config.get('LOG_DB_USER', 'monitor_user'),
             'password': config.get('LOG_DB_PASSWORD', ''),
-            'database': config.get('LOG_DB_NAME', 'LOGSEGURIDAD'),
-            'charset': 'utf8mb4'
+            'database': config.get('LOG_DB_NAME', 'logseguridad')
         }
 
         # URL base del gestor y frecuencia de monitoreo
@@ -88,11 +87,11 @@ class DatabaseMonitor:
         return self.gestor_client[self.gestor_mongo_db]
 
     def get_log_connection(self):
-        """Obtiene conexión a la base de datos de logs (MySQL)"""
+        """Obtiene conexión a la base de datos de logs (PostgreSQL)"""
         try:
-            return pymysql.connect(**self.log_db_config)
+            return psycopg2.connect(**self.log_db_config)
         except Exception as e:
-            logger.error(f"Error conectando a la BD de logs (MySQL): {e}")
+            logger.error(f"Error conectando a la BD de logs (PostgreSQL): {e}")
             return None
 
     # NUEVO: método para bloquear la instancia de Gestor de Pedidos
@@ -140,10 +139,10 @@ class DatabaseMonitor:
             self.bloquear_gestor_pedidos(motivo, details)
 
     def log_operation(self, operation_type: str, details: Dict, is_suspicious: bool = False):
-        """Registra una operación en la base de datos de logs (MySQL - LOGSEGURIDAD)"""
+        """Registra una operación en la base de datos de logs (PostgreSQL - LOGSEGURIDAD)"""
         conn = self.get_log_connection()
         if not conn:
-            logger.error("No se pudo conectar a la base de datos de logs (MySQL)")
+            logger.error("No se pudo conectar a la base de datos de logs (PostgreSQL)")
             return False
 
         try:
