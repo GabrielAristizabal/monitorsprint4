@@ -1,28 +1,39 @@
-# app/api/admin.py
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter
+from pydantic import BaseModel
+from typing import Optional, Dict, Any
+import logging
 import os
 import signal
 import threading
+import time
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+logger = logging.getLogger(__name__)
 
-# Token que solo debe conocer el monitor
-MONITOR_TOKEN = os.getenv("MONITOR_TOKEN", "cambia-este-token")
+router = APIRouter(
+    prefix="/admin",
+    tags=["admin"],
+)
 
-def _stop_process_gracefully():
+class BlockRequest(BaseModel):
+    reason: Optional[str] = None
+    extra: Optional[Dict[str, Any]] = None
+
+def _delayed_shutdown(delay: float = 0.5):
     """
-    Mata el proceso actual (uvicorn) con SIGINT después de responder al cliente.
+    Apaga el proceso de uvicorn después de un pequeño delay
+    para que la respuesta 200 llegue al monitor.
     """
-    pid = os.getpid()
-    os.kill(pid, signal.SIGINT)
+    time.sleep(delay)
+    logger.warning("Apagando proceso de uvicorn por bloqueo remoto...")
+    os.kill(os.getpid(), signal.SIGTERM)
 
-@router.post("/shutdown")
-def shutdown_service(x_monitor_token: str = Header(..., alias="X-Monitor-Token")):
-    # 1) Validar que la llamada venga del monitor
-    if x_monitor_token != MONITOR_TOKEN:
-        raise HTTPException(status_code=403, detail="Not allowed")
-
-    # 2) Lanzar un thread para apagar el proceso después de responder
-    threading.Thread(target=_stop_process_gracefully).start()
-
-    return {"detail": "Shutdown iniciado por el monitor"}
+@router.post("/block")
+async def block_service(body: BlockRequest):
+    """
+    Endpoint llamado por el monitor cuando detecta elevación de privilegios.
+    Responde 200 y, en segundo plano, termina el proceso.
+    """
+    logger.warning(f"Bloqueo remoto solicitado por monitor. Motivo: {body.reason} Extra: {body.extra}")
+    t = threading.Thread(target=_delayed_shutdown, kwargs={"delay": 0.5}, daemon=True)
+    t.start()
+    return {"status": "stopping", "reason": body.reason}

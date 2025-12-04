@@ -31,4 +31,6 @@ class Config:
     
     # Configuración de seguridad
     SECRET_KEY = os.getenv('SECRET_KEY', 'change-this-secret-key-in-production')
+    GESTOR_BLOCK_URL = os.getenv('GESTOR_BLOCK_URL', f"{GESTOR_API_URL}/admin/block")
+
 

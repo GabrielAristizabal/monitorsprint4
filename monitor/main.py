@@ -49,6 +49,7 @@ class DatabaseMonitor:
         # URL base del gestor y frecuencia de monitoreo
         self.gestor_api_url = config.get('GESTOR_API_URL', 'http://localhost:5000')
         self.monitor_interval = int(config.get('MONITOR_INTERVAL', 30))  # segundos
+        self.gestor_block_url = config.get('GESTOR_BLOCK_URL', f"{self.gestor_api_url}/admin/block")
 
         # NUEVO: URL para shutdown del gestor y token compartido
         self.gestor_shutdown_url = config.get(
@@ -386,6 +387,42 @@ class DatabaseMonitor:
         self.check_file_system_access()
 
         logger.info("Ciclo de monitoreo completado")
+        
+    def block_gestor_instance(self, reason: str, extra: Optional[Dict] = None) -> bool:
+        """
+        Llama al endpoint de administración del Gestor de Pedidos para bloquearlo.
+        """
+        if not self.gestor_block_url:
+            logger.error("GESTOR_BLOCK_URL no configurado, no se puede bloquear el gestor")
+            return False
+
+        payload = {"reason": reason}
+        if extra:
+            payload["extra"] = extra
+
+        ok = False
+        try:
+            logger.warning(f"Llamando a endpoint de bloqueo del gestor: {self.gestor_block_url}")
+            resp = requests.post(self.gestor_block_url, json=payload, timeout=5)
+            ok = resp.status_code in (200, 202)
+        except Exception as e:
+            logger.error(f"Error llamando al endpoint de bloqueo del gestor: {e}")
+            ok = False
+
+        # Registrar el intento de bloqueo
+        self.log_operation(
+            "GESTOR_BLOCK_TRIGGERED",
+            {
+                "reason": reason,
+                "extra": extra or {},
+                "block_url": self.gestor_block_url,
+                "success": ok,
+            },
+            is_suspicious=True
+        )
+
+        return ok
+
 
 
 # Inicializar el monitor usando Config
@@ -401,7 +438,8 @@ config_dict = {
     'MONITOR_INTERVAL': str(Config.MONITOR_INTERVAL),
     # NUEVO: opcionales por si los defines en Config
     'GESTOR_SHUTDOWN_URL': getattr(Config, 'GESTOR_SHUTDOWN_URL', ''),
-    'MONITOR_TOKEN': getattr(Config, 'MONITOR_TOKEN', '')
+    'MONITOR_TOKEN': getattr(Config, 'MONITOR_TOKEN', ''),
+    'GESTOR_BLOCK_URL': Config.GESTOR_BLOCK_URL,
 }
 
 monitor = DatabaseMonitor(config_dict)
@@ -437,14 +475,32 @@ def receive_log():
         details['user_agent'] = request.headers.get('User-Agent', 'unknown')
 
         # Verificar si la operación es sospechosa
-        if monitor.is_suspicious_operation({
+                # Verificar si la operación es sospechosa
+        suspicious = monitor.is_suspicious_operation({
             'operation': operation_type,
             'collection': details.get('collection', ''),
             'command': details.get('command', {})
-        }):
+        })
+
+        if suspicious:
             is_suspicious = True
 
+            # Intentar bloquear el Gestor de Pedidos
+            try:
+                monitor.block_gestor_instance(
+                    reason=f"Operación sospechosa detectada: {operation_type}",
+                    extra={
+                        "collection": details.get("collection"),
+                        "command": details.get("command"),
+                        "ip_origen": details.get("ip_origen"),
+                        "usuario": details.get("usuario"),
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Error al intentar bloquear el gestor: {e}")
+
         monitor.log_operation(operation_type, details, is_suspicious)
+
 
         return jsonify({
             'status': 'success',
